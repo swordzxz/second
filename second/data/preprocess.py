@@ -41,7 +41,7 @@ def merge_second_batch(batch_list, _unused=False):
     return ret
 
 
-def prep_pointcloud(kitti_points,
+def prep_pointcloud(input_dict,
                     root_path,
                     voxel_generator,
                     target_assigner,
@@ -62,7 +62,7 @@ def prep_pointcloud(kitti_points,
                     generate_bev=False,
                     without_reflectivity=False,
                     num_point_features=4,
-                    anchor_area_threshold=-1,
+                    anchor_area_threshold=1,
                     gt_points_drop=0.0,
                     gt_drop_max_keep=10,
                     remove_points_after_sample=True,
@@ -81,12 +81,7 @@ def prep_pointcloud(kitti_points,
     """convert point cloud to voxels, create targets if ground truths 
     exists.
     """
-    #points = input_dict["points"]
-    points =kitti_points
-    rect =np.load("/home/ubuntu/dev/catkin_workspace/src/SECOND/second.pytorch/second/data/rect.npy")
-    Trv2c=np.load("/home/ubuntu/dev/catkin_workspace/src/SECOND/second.pytorch/second/data/Trv2c.npy")
-    P2=np.load("/home/ubuntu/dev/catkin_workspace/src/SECOND/second.pytorch/second/data/P2.npy")
-    #np.save("/root/second-1.5/points",points)
+    points = input_dict["points"]
     if training:
         gt_boxes = input_dict["gt_boxes"]
         gt_names = input_dict["gt_names"]
@@ -94,11 +89,11 @@ def prep_pointcloud(kitti_points,
         group_ids = None
         if use_group_id and "group_ids" in input_dict:
             group_ids = input_dict["group_ids"]
-    # rect = input_dict["rect"]
-    # Trv2c = input_dict["Trv2c"]
-    # P2 = input_dict["P2"]
-    # unlabeled_training = unlabeled_db_sampler is not None
-    # image_idx = input_dict["image_idx"]
+    rect = input_dict["rect"]
+    Trv2c = input_dict["Trv2c"]
+    P2 = input_dict["P2"]
+    unlabeled_training = unlabeled_db_sampler is not None
+    image_idx = input_dict["image_idx"]
 
     if reference_detections is not None:
         C, R, T = box_np_ops.projection_matrix_to_CRT_kitti(P2)
@@ -241,14 +236,13 @@ def prep_pointcloud(kitti_points,
         'voxels': voxels,
         'num_points': num_points,
         'coordinates': coordinates,
-        #"num_voxels": np.array([voxels.shape[0]], dtype=np.int64)
+        "num_voxels": np.array([voxels.shape[0]], dtype=np.int64)
     }
     example.update({
         'rect': rect,
         'Trv2c': Trv2c,
         'P2': P2,
     })
-
     # if not lidar_input:
     feature_map_size = grid_size[:2] // out_size_factor
     feature_map_size = [*feature_map_size, 1][::-1]
@@ -281,7 +275,7 @@ def prep_pointcloud(kitti_points,
             dense_voxel_map, anchors_bv, voxel_size, pc_range, grid_size)
         anchors_mask = anchors_area > anchor_area_threshold
         # example['anchors_mask'] = anchors_mask.astype(np.uint8)
-        #example['anchors_mask'] = anchors_mask
+        example['anchors_mask'] = anchors_mask
     if not training:
         return example
     if create_targets:

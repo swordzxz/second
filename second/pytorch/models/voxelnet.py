@@ -41,109 +41,7 @@ class LossNormType(Enum):
     NormByNumExamples = "norm_by_num_examples"
     NormByNumPosNeg = "norm_by_num_pos_neg"
 
-###########
-class Bottleneck(nn.Module):
-    expansion = 4
 
-    def __init__(self, in_planes, planes, stride=1):
-        super(Bottleneck, self).__init__()
-        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.conv3 = nn.Conv2d(planes, self.expansion*planes, kernel_size=1, bias=False)
-        self.bn3 = nn.BatchNorm2d(self.expansion*planes)
-
-        self.shortcut = nn.Sequential()
-        if stride != 1 or in_planes != self.expansion*planes:
-            self.shortcut = nn.Sequential(
-                nn.Conv2d(in_planes, self.expansion*planes, kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(self.expansion*planes)
-            )
-
-    def forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = F.relu(self.bn2(self.conv2(out)))
-        out = self.bn3(self.conv3(out))
-        out += self.shortcut(x)
-        out = F.relu(out)
-        return out
-
-
-class FPN(nn.Module):
-    def __init__(self, block, num_blocks):
-        super(FPN, self).__init__()
-        self.in_planes = 64
-
-        self.conv1 = nn.Conv2d(128, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-
-        # Bottom-up layers
-        self.layer1 = self._make_layer(block,  64, num_blocks[0], stride=0)
-        self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
-        self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
-
-        # Top layer
-        self.toplayer = nn.Conv2d(2048, 128, kernel_size=1, stride=1, padding=0)  # Reduce channels
-
-        # Smooth layers
-        self.smooth1 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1)
-        self.smooth2 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1)
-        self.smooth3 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1)
-
-        # Lateral layers
-        self.latlayer1 = nn.Conv2d(1024, 128, kernel_size=1, stride=1, padding=0)
-        self.latlayer2 = nn.Conv2d(512, 128, kernel_size=1, stride=1, padding=0)
-        self.latlayer3 = nn.Conv2d(256, 128, kernel_size=1, stride=1, padding=0)
-
-    def _make_layer(self, block, planes, num_blocks, stride):
-        strides = [stride] + [1]*(num_blocks-1)
-        layers = []
-        for stride in strides:
-            layers.append(block(self.in_planes, planes, stride))
-            self.in_planes = planes * block.expansion
-        return nn.Sequential(*layers)
-
-
-    def _upsample_add(self, x, y):
-        '''Upsample and add two feature maps.
-        Args:
-          x: (Variable) top feature map to be upsampled.
-          y: (Variable) lateral feature map.
-        Returns:
-          (Variable) added feature map.
-        Note in PyTorch, when input size is odd, the upsampled feature map
-        with `F.upsample(..., scale_factor=2, mode='nearest')`
-        maybe not equal to the lateral feature map size.
-        e.g.
-        original input size: [N,_,15,15] ->
-        conv2d feature map size: [N,_,8,8] ->
-        upsampled feature map size: [N,_,16,16]
-        So we choose bilinear upsample which supports arbitrary output sizes.
-        '''
-        _,_,H,W = y.size()
-        return F.upsample(x, size=(H,W),mode='nearest') + y
-
-    def forward(self, x):
-        # Bottom-up
-        c1 = F.relu(self.bn1(self.conv1(x)))
-        c1 = F.max_pool2d(c1, kernel_size=3, stride=2, padding=1)
-        c2 = self.layer1(c1)
-        c3 = self.layer2(c2)
-        c4 = self.layer3(c3)
-        c5 = self.layer4(c4)
-        # Top-down
-        p5 = self.toplayer(c5)
-        p4 = self._upsample_add(p5, self.latlayer1(c4))
-        p3 = self._upsample_add(p4, self.latlayer2(c3))
-        p2 = self._upsample_add(p3, self.latlayer3(c2))
-        # Smooth
-        p4 = self.smooth1(p4)
-        p3 = self.smooth2(p3)
-        p2 = self.smooth3(p2)
-        return p2, p3, p4, p5
-##########
 class VoxelNet(nn.Module):
     def __init__(self,
                  output_shape,
@@ -157,7 +55,7 @@ class VoxelNet(nn.Module):
                  middle_num_filters_d1=[64],
                  middle_num_filters_d2=[64, 64],
                  rpn_class_name="RPN",
-                 rpn_num_input_features=128,
+                 rpn_num_input_features=-1,
                  rpn_layer_nums=[3, 5, 5],
                  rpn_layer_strides=[2, 2, 2],
                  rpn_num_filters=[128, 128, 256],
@@ -193,9 +91,6 @@ class VoxelNet(nn.Module):
                  measure_time=False,
                  name='voxelnet'):
         super().__init__()
-        ####
-        #self.fpn =FPN()
-        ####
         self.name = name
         self._num_class = num_class
         self._use_rotate_nms = use_rotate_nms
@@ -292,7 +187,7 @@ class VoxelNet(nn.Module):
             }
             rpn_class = rpn_class_dict[rpn_class_name]
             self.rpn = rpn_class(
-                use_norm  =True,
+                use_norm=True,
                 num_class=num_class,
                 layer_nums=rpn_layer_nums,
                 layer_strides=rpn_layer_strides,
@@ -391,40 +286,16 @@ class VoxelNet(nn.Module):
             spatial_features = self.middle_feature_extractor(
                 voxel_features, coors, batch_size_dev)
             self.end_timer("middle forward")
-            #############
-            #self.start_timer("FPN")
-            #net_fpn=FPN(Bottleneck,[2,2,2,2])
-            #net_fpn.cuda()
-            #print(spatial_features.shape)
-            #spatial_features = spatial_features.view(6,128,128,275)
-            #print(spatial_features.shape)
-            #spatial_features =spatial_features.cuda()
-            #print(net_fpn(spatial_features))
-            #spatial_features =net_fpn(spatial_features)
-            #for fm in spatial_features:
-            #    print(fm.size())
-
-            #print('spatial_features: ', spatial_features)
-            #spatial_features = spatial_features[0]
-            #self.end_timer("FPN")
-
             self.start_timer("rpn forward")
-
-            #for i in range(4):
             if self._use_bev:
                 preds_dict = self.rpn(spatial_features, example["bev_map"])
             else:
-                preds_dict= self.rpn(spatial_features)
-                #preds_dict_1 = self.rpn(spatial_features[1])
-                #preds_dict_2 = self.rpn(spatial_features[2])
-               # preds_dict_3 = self.rpn(spatial_features[3])
+                preds_dict = self.rpn(spatial_features)
             self.end_timer("rpn forward")
-
         # preds_dict["voxel_features"] = voxel_features
         # preds_dict["spatial_features"] = spatial_features
         box_preds = preds_dict["box_preds"]
         cls_preds = preds_dict["cls_preds"]
-        ############
         if self.training:
             labels = example['labels']
             reg_targets = example['reg_targets']

@@ -7,6 +7,8 @@ from functools import partial
 import json 
 import fire
 import numpy as np
+import csv
+import pandas as pd
 import torch
 from google.protobuf import text_format
 from tensorboardX import SummaryWriter
@@ -406,7 +408,9 @@ def train(config_path,
                 dt_annos = kitti.get_label_annos(result_path_step)
             # result = get_official_eval_result_v2(gt_annos, dt_annos, class_names)
             # print(json.dumps(result, indent=2), file=logf)
-            result = get_official_eval_result(gt_annos, dt_annos, class_names)
+            result= get_official_eval_result(gt_annos, dt_annos, class_names)
+
+
             print(result, file=logf)
             print(result)
             writer.add_text('eval_result', json.dumps(result, indent=2), global_step)
@@ -593,7 +597,7 @@ def evaluate(config_path,
     input_cfg = config.eval_input_reader
     model_cfg = config.model.second
     train_cfg = config.train_config
-
+    
     center_limit_range = model_cfg.post_center_limit_range
     ######################
     # BUILD VOXEL GENERATOR
@@ -619,8 +623,6 @@ def evaluate(config_path,
         net.metrics_to_float()
         net.convert_norm_to_float(net)
     batch_size = batch_size or input_cfg.batch_size
-
-    start = time.clock()
     eval_dataset = input_reader_builder.build(
         input_cfg,
         model_cfg,
@@ -634,8 +636,7 @@ def evaluate(config_path,
         num_workers=0,# input_cfg.num_workers,
         pin_memory=False,
         collate_fn=merge_second_batch)
-    elapsed = (time.clock() - start)
-    print("Time used:", elapsed)
+
     if train_cfg.enable_mixed_precision:
         float_dtype = torch.float16
     else:
@@ -655,7 +656,6 @@ def evaluate(config_path,
     t2 = time.time()
     # print("eval_dataloader.type", type(eval_dataloader))
     # print("eval_dataloader.shape", len(eval_dataloader))
-
     for example in iter(eval_dataloader):
         # print("example keys",example.keys())
         # print("example type", type(example))
