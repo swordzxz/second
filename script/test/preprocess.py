@@ -83,9 +83,9 @@ def prep_pointcloud(kitti_points,
     """
     #points = input_dict["points"]
     points =kitti_points
-    rect =np.load("/home/ubuntu/dev/catkin_workspace/src/SECOND/second.pytorch/second/data/rect.npy")
-    Trv2c=np.load("/home/ubuntu/dev/catkin_workspace/src/SECOND/second.pytorch/second/data/Trv2c.npy")
-    P2=np.load("/home/ubuntu/dev/catkin_workspace/src/SECOND/second.pytorch/second/data/P2.npy")
+    rect =np.load("/root/second-1.5/rect.npy")
+    Trv2c=np.load("/root/second-1.5/Trv2c.npy")
+    P2=np.load("/root/second-1.5/P2.npy")
     #np.save("/root/second-1.5/points",points)
     if training:
         gt_boxes = input_dict["gt_boxes"]
